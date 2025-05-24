@@ -1,12 +1,14 @@
 import json
 import torch
+
 from modelscope import snapshot_download, AutoTokenizer
-from swanlab.integration.huggingface import SwanLabCallback
+from swanlab.integration.transformers import SwanLabCallback
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForSeq2Seq
 import swanlab
+import os
+os.environ["SWANLAB_MODE"] = "disabled"
 
-            
 def process_func(example):
     """
     将数据集进行预处理
@@ -27,13 +29,34 @@ def process_func(example):
         input_ids = input_ids[:MAX_LENGTH]
         attention_mask = attention_mask[:MAX_LENGTH]
         labels = labels[:MAX_LENGTH]
-    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}   
+    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
-model_dir = snapshot_download("Qwen/Qwen2.5-0.5B-Instruct", cache_dir="./", revision="master")
+model_dir = snapshot_download(
+    "Qwen/Qwen2.5-0.5B-Instruct",
+    cache_dir="./",
+    ignore_file_pattern=[".*\.bin"],  # 避免重复下载
+    revision="master"
+)
+#print(f"实际模型路径: {model_dir}")
+#model_dir = snapshot_download("Qwen/Qwen2.5-0.5B-Instruct", cache_dir="./", revision="master")
 
 # Transformers加载模型权重
-tokenizer = AutoTokenizer.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", use_fast=False, trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", device_map="auto", torch_dtype=torch.bfloat16)
+# 使用动态路径加载模型
+tokenizer = AutoTokenizer.from_pretrained(
+    model_dir,
+    use_fast=False,
+    trust_remote_code=True
+ )
+model = AutoModelForCausalLM.from_pretrained(
+    model_dir,
+    device_map="auto",
+    torch_dtype=torch.bfloat16,
+    trust_remote_code=True,
+    attn_implementation="eager"
+)
+
+#tokenizer = AutoTokenizer.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", use_fast=False, trust_remote_code=True)
+#model = AutoModelForCausalLM.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", device_map="auto", torch_dtype=torch.bfloat16)
 model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
 train_json_new_path = "train.json"
@@ -66,6 +89,7 @@ args = TrainingArguments(
     save_on_each_node=True,
     gradient_checkpointing=True,
     report_to="none",
+    label_names=["labels"]
 )
 
 swanlab_callback = SwanLabCallback(
@@ -85,6 +109,6 @@ trainer = Trainer(
     callbacks=[swanlab_callback],
 )
 
-trainer.train()
+#trainer.train()
 
-swanlab.finish()
+#swanlab.finish()
