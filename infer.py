@@ -44,13 +44,12 @@ model = AutoModelForCausalLM.from_pretrained(
     trust_remote_code=True,
     attn_implementation="eager"
 )
-#tokenizer = AutoTokenizer.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", use_fast=False, trust_remote_code=True)
-#model = AutoModelForCausalLM.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", device_map="auto", torch_dtype=torch.bfloat16)
-model = PeftModel.from_pretrained(model, model_id="./output/Qwen/checkpoint-3750/")
+
+#model = PeftModel.from_pretrained(model, model_id="./output/Qwen/checkpoint-3750/")
 
 with open("submit.csv", 'w', encoding='utf-8') as file:
     for idx, row in tqdm(enumerate(test_data)):
-        instruction = row['instruction']
+        instruction = "这是小学数学1-6年级的校内题目，让我们一步步思考"
         input_value = row['question']
         id = row['id']
         
@@ -59,6 +58,7 @@ with open("submit.csv", 'w', encoding='utf-8') as file:
             {"role": "user", "content": f"{input_value}"}
         ]
         response = predict(messages, model, tokenizer)
+        print(response)
         response = response.replace('\n', ' ')
         file.write(f"{id},{response}\n")
 

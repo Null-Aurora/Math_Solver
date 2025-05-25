@@ -37,8 +37,6 @@ model_dir = snapshot_download(
     ignore_file_pattern=[".*\.bin"],  # 避免重复下载
     revision="master"
 )
-#print(f"实际模型路径: {model_dir}")
-#model_dir = snapshot_download("Qwen/Qwen2.5-0.5B-Instruct", cache_dir="./", revision="master")
 
 # Transformers加载模型权重
 # 使用动态路径加载模型
@@ -55,8 +53,6 @@ model = AutoModelForCausalLM.from_pretrained(
     attn_implementation="eager"
 )
 
-#tokenizer = AutoTokenizer.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", use_fast=False, trust_remote_code=True)
-#model = AutoModelForCausalLM.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", device_map="auto", torch_dtype=torch.bfloat16)
 model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
 train_json_new_path = "train.json"
@@ -108,7 +104,5 @@ trainer = Trainer(
     data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
     callbacks=[swanlab_callback],
 )
-
-#trainer.train()
-
-#swanlab.finish()
+trainer.train()
+swanlab.finish()
