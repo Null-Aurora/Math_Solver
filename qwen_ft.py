@@ -1,6 +1,6 @@
 import json
 import torch
-
+import re
 from modelscope import snapshot_download, AutoTokenizer
 from swanlab.integration.transformers import SwanLabCallback
 from peft import LoraConfig, TaskType, get_peft_model
@@ -10,16 +10,13 @@ import os
 os.environ["SWANLAB_MODE"] = "disabled"
 
 def process_func(example):
-    """
-    将数据集进行预处理
-    """
-    MAX_LENGTH = 384 
+    MAX_LENGTH = 512
     input_ids, attention_mask, labels = [], [], []
     instruction = tokenizer(
-        f"<|im_start|>system\n{example['instruction']}<|im_end|>\n<|im_start|>user\n{example['question']}<|im_end|>\n<|im_start|>assistant\n",
+        f"<|im_start|>system\n{"这是小学数学1-6年级的校内题目，请解答"}<|im_end|>\n<|im_start|>user\n{example['question']}<|im_end|>\n<|im_start|>assistant\n",
         add_special_tokens=False,
     )
-    response = tokenizer(f"{example['answer']}", add_special_tokens=False)
+    response = tokenizer(f"{example['solution_steps']}", add_special_tokens=False)
     input_ids = instruction["input_ids"] + response["input_ids"] + [tokenizer.pad_token_id]
     attention_mask = (
         instruction["attention_mask"] + response["attention_mask"] + [1]
@@ -31,14 +28,27 @@ def process_func(example):
         labels = labels[:MAX_LENGTH]
     return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
+def extract_final_answer(text):
+    # 匹配"答案："格式
+    colon_match = re.search(r'(?:最终答案|结果是?)[:：]\s*([+-]?\d+\.?\d*)', text)
+    if colon_match:
+        return colon_match.group(1)
+
+    # 匹配方括号格式
+    bracket_match = re.search(r'\[([+-]?\d+\.?\d*)]', text)
+    if bracket_match:
+        return bracket_match.group(1)
+
+    # 提取最后一个数字
+    numbers = re.findall(r'-?\d+\.?\d*', text)
+    return numbers[-1] if numbers else "0"
+
 model_dir = snapshot_download(
     "Qwen/Qwen2.5-0.5B-Instruct",
     cache_dir="./",
     ignore_file_pattern=[".*\.bin"],  # 避免重复下载
     revision="master"
 )
-#print(f"实际模型路径: {model_dir}")
-#model_dir = snapshot_download("Qwen/Qwen2.5-0.5B-Instruct", cache_dir="./", revision="master")
 
 # Transformers加载模型权重
 # 使用动态路径加载模型
@@ -55,16 +65,17 @@ model = AutoModelForCausalLM.from_pretrained(
     attn_implementation="eager"
 )
 
-#tokenizer = AutoTokenizer.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", use_fast=False, trust_remote_code=True)
-#model = AutoModelForCausalLM.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", device_map="auto", torch_dtype=torch.bfloat16)
 model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
-
-train_json_new_path = "train.json"
-
+train_json_new_path = "train_with_steps.json"
+skipped = 0
 with open(train_json_new_path, 'r', encoding='utf-8') as file:
     train_data = json.load(file)
 train_dataset = []
 for d in train_data:
+    if 'solution_steps' not in d or not d['solution_steps']:
+        skipped += 1
+        print(f"累计已跳过{skipped}道没有步骤的题目")
+        continue  # 跳过没有 solution_steps 的样本
     train_dataset.append(process_func(d))
 
 config = LoraConfig(
@@ -109,6 +120,6 @@ trainer = Trainer(
     callbacks=[swanlab_callback],
 )
 
-#trainer.train()
+trainer.train()
+swanlab.finish()
 
-#swanlab.finish()

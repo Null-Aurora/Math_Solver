@@ -1,5 +1,6 @@
 import json
 import torch
+import re
 from tqdm import tqdm
 from modelscope import AutoTokenizer
 from transformers import AutoModelForCausalLM
@@ -26,6 +27,21 @@ def predict(messages, model, tokenizer):
      
     return response
 
+def extract_final_answer(text):
+    # 匹配"答案："格式
+    colon_match = re.search(r'(?:最终答案|结果是?)[:：]\s*([+-]?\d+\.?\d*)', text)
+    if colon_match:
+        return colon_match.group(1)
+
+    # 匹配方括号格式
+    bracket_match = re.search(r'\[([+-]?\d+\.?\d*)]', text)
+    if bracket_match:
+        return bracket_match.group(1)
+
+    # 提取最后一个数字
+    numbers = re.findall(r'-?\d+\.?\d*', text)
+    return numbers[-1] if numbers else "0"
+
 test_json_new_path = "test.json"
 
 with open(test_json_new_path, 'r', encoding='utf-8') as file:
@@ -44,22 +60,23 @@ model = AutoModelForCausalLM.from_pretrained(
     trust_remote_code=True,
     attn_implementation="eager"
 )
-#tokenizer = AutoTokenizer.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", use_fast=False, trust_remote_code=True)
-#model = AutoModelForCausalLM.from_pretrained("./Qwen/Qwen2.5-0.5B-Instruct/", device_map="auto", torch_dtype=torch.bfloat16)
+
 model = PeftModel.from_pretrained(model, model_id="./output/Qwen/checkpoint-3750/")
 
 with open("submit.csv", 'w', encoding='utf-8') as file:
     for idx, row in tqdm(enumerate(test_data)):
-        instruction = row['instruction']
+        instruction = "这是小学数学1-6年级的校内题目,请解答"
         input_value = row['question']
         id = row['id']
-        
+
         messages = [
             {"role": "system", "content": f"{instruction}"},
             {"role": "user", "content": f"{input_value}"}
         ]
-        response = predict(messages, model, tokenizer)
-        response = response.replace('\n', ' ')
-        file.write(f"{id},{response}\n")
+        full_response = predict(messages, model, tokenizer)
+        print(full_response);
+        final_answer = extract_final_answer(full_response)
+        final_answer = final_answer.replace('\n', ' ').strip()
+        file.write(f"{id},{final_answer}\n")
 
 
