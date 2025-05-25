@@ -108,7 +108,5 @@ trainer = Trainer(
     data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
     callbacks=[swanlab_callback],
 )
-
-#trainer.train()
-
-#swanlab.finish()
+trainer.train()
+swanlab.finish()
